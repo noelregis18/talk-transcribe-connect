@@ -11,6 +11,14 @@ import { TranslationOptions } from "@/components/meeting/TranslationOptions";
 import { Copy, Check } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
+// WebRTC configuration
+const configuration = { 
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ] 
+};
+
 type Participant = {
   id: string;
   name: string;
@@ -20,17 +28,6 @@ type Participant = {
   stream?: MediaStream | null;
 };
 
-const MOCK_PARTICIPANTS: Record<string, string[]> = {};
-
-// Mock participant names for demo purposes
-const mockNames = [
-  "Alex Johnson", 
-  "Jamie Smith", 
-  "Taylor Rodriguez", 
-  "Casey Williams", 
-  "Jordan Brown"
-];
-
 const MeetingRoom = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -39,6 +36,11 @@ const MeetingRoom = () => {
   const { toast } = useToast();
   
   const participantId = useRef(uuidv4()).current;
+  
+  // WebRTC related state
+  const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -56,43 +58,247 @@ const MeetingRoom = () => {
   const [copied, setCopied] = useState(false);
 
   const [participants, setParticipants] = useState<Participant[]>([]);
-
-  // Initialize MOCK_PARTICIPANTS for this meeting if it doesn't exist
+  
+  // Function to create a simple signaling server connection
+  // In a production environment, you would use a proper signaling server
   useEffect(() => {
-    if (!MOCK_PARTICIPANTS[id || ""]) {
-      MOCK_PARTICIPANTS[id || ""] = [];
-    }
-  }, [id]);
-
-  // Register current user in the meeting
-  useEffect(() => {
-    if (id) {
-      // Add participant to meeting if they're not already in
-      if (!MOCK_PARTICIPANTS[id].includes(participantId)) {
-        MOCK_PARTICIPANTS[id].push(participantId);
+    if (!id) return;
+    
+    // Create WebSocket connection for signaling
+    // Using a mock local WebSocket for demo - in production use a real signaling server
+    const wsUrl = `wss://mock-signaling-server.com/meeting/${id}`;
+    const mockSocket = {
+      onopen: null as any,
+      onmessage: null as any,
+      onclose: null as any,
+      onerror: null as any,
+      send: (data: string) => {
+        // Mock sending data - simulate broadcast to all participants
+        // In a real implementation, this would go to a server
+        console.log("Sending signal:", JSON.parse(data));
         
-        // Simulate a join notification
-        toast({
-          title: "You joined the meeting",
-          description: `Welcome to meeting room: ${id}`,
-        });
-      }
-
-      return () => {
-        // Remove participant when they leave
-        if (id && MOCK_PARTICIPANTS[id]) {
-          const index = MOCK_PARTICIPANTS[id].indexOf(participantId);
-          if (index > -1) {
-            MOCK_PARTICIPANTS[id].splice(index, 1);
+        // Simulate receiving data from other peers with a delay
+        setTimeout(() => {
+          const parsedData = JSON.parse(data);
+          if (parsedData.type === "join" && parsedData.senderId === participantId) {
+            simulateNewParticipantJoining();
           }
-        }
+        }, 2000);
+      },
+      close: () => console.log("WebSocket closed")
+    };
+    
+    socketRef.current = mockSocket as unknown as WebSocket;
+    
+    // Send join message to notify others
+    if (socketRef.current) {
+      socketRef.current.onopen = () => {
+        sendSignal({ 
+          type: "join", 
+          senderId: participantId, 
+          senderName: participantName 
+        });
+      };
+      
+      // Simulate connection open immediately for mock
+      mockSocket.onopen && mockSocket.onopen();
+      
+      // Handle incoming messages
+      socketRef.current.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        handleSignalingData(message);
       };
     }
-  }, [id, participantId, toast]);
+    
+    return () => {
+      // Clean up WebSocket connection
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+      
+      // Clean up peer connections
+      Object.values(peerConnections.current).forEach(connection => {
+        connection.close();
+      });
+      peerConnections.current = {};
+    };
+  }, [id, participantId, participantName]);
+  
+  // Helper function to send signals via the WebSocket
+  const sendSignal = (message: any) => {
+    if (socketRef.current) {
+      socketRef.current.send(JSON.stringify(message));
+    }
+  };
+  
+  // Handle incoming WebRTC signaling data
+  const handleSignalingData = async (message: any) => {
+    // Handle different message types (offer, answer, ice candidate)
+    if (message.senderId === participantId) return; // Skip messages from self
+    
+    const { senderId, senderName, type } = message;
+    
+    // If this is a new user, create a peer connection for them
+    if (!peerConnections.current[senderId]) {
+      createPeerConnection(senderId, senderName);
+    }
+    
+    switch (type) {
+      case "join":
+        // New participant joined, send them an offer
+        if (localStreamRef.current) {
+          const offer = await peerConnections.current[senderId].createOffer();
+          await peerConnections.current[senderId].setLocalDescription(offer);
+          sendSignal({
+            type: "offer",
+            senderId: participantId,
+            receiverId: senderId,
+            sdp: peerConnections.current[senderId].localDescription
+          });
+        }
+        break;
+        
+      case "offer":
+        // Received an offer, create an answer
+        if (message.receiverId === participantId) {
+          await peerConnections.current[senderId].setRemoteDescription(new RTCSessionDescription(message.sdp));
+          const answer = await peerConnections.current[senderId].createAnswer();
+          await peerConnections.current[senderId].setLocalDescription(answer);
+          sendSignal({
+            type: "answer",
+            senderId: participantId,
+            receiverId: senderId,
+            sdp: peerConnections.current[senderId].localDescription
+          });
+        }
+        break;
+        
+      case "answer":
+        // Received an answer to our offer
+        if (message.receiverId === participantId) {
+          await peerConnections.current[senderId].setRemoteDescription(new RTCSessionDescription(message.sdp));
+        }
+        break;
+        
+      case "ice-candidate":
+        // Add ICE candidate received from peer
+        if (message.receiverId === participantId) {
+          await peerConnections.current[senderId].addIceCandidate(
+            new RTCIceCandidate(message.candidate)
+          );
+        }
+        break;
+        
+      case "leave":
+        // Participant left, clean up their connection
+        if (peerConnections.current[senderId]) {
+          peerConnections.current[senderId].close();
+          delete peerConnections.current[senderId];
+          
+          // Remove participant from list
+          setParticipants(prev => prev.filter(p => p.id !== senderId));
+          
+          toast({
+            title: "Participant left",
+            description: `${senderName} has left the meeting`
+          });
+        }
+        break;
+    }
+  };
+  
+  // Create a new WebRTC peer connection
+  const createPeerConnection = (peerId: string, peerName: string) => {
+    try {
+      const peerConnection = new RTCPeerConnection(configuration);
+      
+      // Add all local tracks to the peer connection
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStreamRef.current!);
+        });
+      }
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal({
+            type: "ice-candidate",
+            senderId: participantId,
+            receiverId: peerId,
+            candidate: event.candidate
+          });
+        }
+      };
+      
+      // Handle incoming tracks
+      peerConnection.ontrack = (event) => {
+        const remoteStream = new MediaStream();
+        event.streams[0].getTracks().forEach(track => {
+          remoteStream.addTrack(track);
+        });
+        
+        // Add or update participant in the participants list
+        setParticipants(prev => {
+          const existingParticipant = prev.find(p => p.id === peerId);
+          if (existingParticipant) {
+            return prev.map(p => p.id === peerId ? {...p, stream: remoteStream} : p);
+          } else {
+            return [...prev, {
+              id: peerId,
+              name: peerName,
+              audioEnabled: true, // Assume enabled initially
+              videoEnabled: true, // Assume enabled initially
+              isCurrentUser: false,
+              stream: remoteStream
+            }];
+          }
+        });
+      };
+      
+      peerConnections.current[peerId] = peerConnection;
+      return peerConnection;
+    } catch (err) {
+      console.error("Error creating peer connection:", err);
+      toast({
+        title: "Connection error",
+        description: "Could not connect to other participants",
+        variant: "destructive"
+      });
+      return null;
+    }
+  };
 
-  // Set up camera and update participants list
+  // Mock function to simulate new participants joining (for demo purposes)
+  // In a real app, this would happen through the signaling server
+  const simulateNewParticipantJoining = () => {
+    // Create a mock participant with a mock stream
+    const mockRemoteStream = new MediaStream();
+    const mockId = uuidv4();
+    const mockName = "Guest User"; 
+    
+    // Add participant to the list
+    setParticipants(prev => [
+      ...prev,
+      {
+        id: mockId,
+        name: mockName,
+        audioEnabled: true,
+        videoEnabled: true,
+        isCurrentUser: false,
+        stream: mockRemoteStream
+      }
+    ]);
+    
+    toast({
+      title: "New participant",
+      description: `${mockName} joined the meeting`
+    });
+  };
+
+  // Set up camera when component mounts
   useEffect(() => {
-    // Set up camera when component mounts
     const setupCamera = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -100,9 +306,24 @@ const MeetingRoom = () => {
           audio: true,
         });
         setStream(mediaStream);
+        localStreamRef.current = mediaStream;
         
-        // Update current user in participants list with stream
-        updateCurrentUserInParticipants(mediaStream);
+        // Update current user in participants list
+        setParticipants([{
+          id: participantId,
+          name: participantName,
+          audioEnabled,
+          videoEnabled,
+          isCurrentUser: true,
+          stream: mediaStream
+        }]);
+        
+        // Send join signal to notify others
+        sendSignal({ 
+          type: "join", 
+          senderId: participantId, 
+          senderName: participantName 
+        });
       } catch (error) {
         console.error("Error accessing media devices:", error);
         toast({
@@ -110,75 +331,34 @@ const MeetingRoom = () => {
           description: "Please check your camera and microphone permissions.",
           variant: "destructive",
         });
+        
         // Still add the participant, but without a stream
-        updateCurrentUserInParticipants(null);
+        setParticipants([{
+          id: participantId,
+          name: participantName,
+          audioEnabled: false,
+          videoEnabled: false,
+          isCurrentUser: true,
+          stream: null
+        }]);
       }
     };
 
     setupCamera();
 
-    // Simulate other participants joining with a delay
-    const simulateOtherParticipants = setTimeout(() => {
-      if (id) {
-        const totalParticipants = Math.floor(Math.random() * 3) + 1; // 1 to 3 other participants
-        const otherParticipants = Array.from({ length: totalParticipants }).map((_, index) => ({
-          id: uuidv4(),
-          name: mockNames[index % mockNames.length],
-          audioEnabled: Math.random() > 0.2, // 80% chance audio is enabled
-          videoEnabled: Math.random() > 0.3, // 70% chance video is enabled
-          isCurrentUser: false,
-          stream: null // In a real app, this would be their actual stream
-        }));
-        
-        setParticipants(current => {
-          const currentUser = current.find(p => p.isCurrentUser);
-          return currentUser ? [...otherParticipants, currentUser] : [...otherParticipants];
-        });
-        
-        toast({
-          title: "New participants joined",
-          description: `${totalParticipants} participant${totalParticipants > 1 ? 's' : ''} joined the meeting`,
-        });
-      }
-    }, 3000);
-
     // Clean up when component unmounts
     return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
       }
       if (screenShareStream) {
         screenShareStream.getTracks().forEach((track) => track.stop());
       }
-      clearTimeout(simulateOtherParticipants);
     };
-  }, [id, toast]);
-
-  const updateCurrentUserInParticipants = (userStream: MediaStream | null) => {
-    setParticipants(current => {
-      // Check if the current user is already in the list
-      const currentUserIndex = current.findIndex(p => p.isCurrentUser);
-      
-      const updatedCurrentUser = {
-        id: participantId,
-        name: participantName,
-        audioEnabled,
-        videoEnabled,
-        isCurrentUser: true,
-        stream: userStream
-      };
-      
-      if (currentUserIndex >= 0) {
-        // Update the existing current user
-        const updatedParticipants = [...current];
-        updatedParticipants[currentUserIndex] = updatedCurrentUser;
-        return updatedParticipants;
-      } else {
-        // Add the current user to the list
-        return [...current, updatedCurrentUser];
-      }
-    });
-  };
+  }, [participantId, participantName, toast]);
 
   // Update the current user's audio/video state in participants list
   useEffect(() => {
@@ -196,6 +376,14 @@ const MeetingRoom = () => {
         track.enabled = !audioEnabled;
       });
       setAudioEnabled(!audioEnabled);
+      
+      // Broadcast audio state change to peers
+      sendSignal({
+        type: "media-state-change",
+        senderId: participantId,
+        audioEnabled: !audioEnabled,
+        videoEnabled
+      });
     }
   };
 
@@ -206,6 +394,14 @@ const MeetingRoom = () => {
         track.enabled = !videoEnabled;
       });
       setVideoEnabled(!videoEnabled);
+      
+      // Broadcast video state change to peers
+      sendSignal({
+        type: "media-state-change",
+        senderId: participantId,
+        audioEnabled,
+        videoEnabled: !videoEnabled
+      });
     }
   };
 
@@ -285,6 +481,13 @@ const MeetingRoom = () => {
   };
 
   const handleEndCall = () => {
+    // Notify other participants that we're leaving
+    sendSignal({
+      type: "leave",
+      senderId: participantId,
+      senderName: participantName
+    });
+    
     // Stop all streams and navigate to home
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());

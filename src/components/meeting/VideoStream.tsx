@@ -33,7 +33,6 @@ export function VideoStream({
     // Apply background effects to video
     if (videoRef.current && stream && backgroundType !== "none") {
       // Additional canvas-based processing could be added here for more advanced background effects
-      // This is placeholder for potential WebRTC background effect implementation
       console.log(`Applying background effect: ${backgroundType}`);
     }
   }, [stream, backgroundType, backgroundValue]);
