@@ -16,10 +16,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Video, MessageSquare, Globe, Monitor, ShieldCheck, Users } from "lucide-react";
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const Index = () => {
   const [meetingId, setMeetingId] = useState("");
   const [name, setName] = useState("");
+  const [quickStartName, setQuickStartName] = useState("");
+  const [showQuickStartDialog, setShowQuickStartDialog] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -58,6 +69,21 @@ const Index = () => {
     }
     
     navigate(`/meet/${meetingId}?name=${encodeURIComponent(name)}`);
+  };
+
+  const handleQuickStart = () => {
+    if (!quickStartName.trim()) {
+      toast({
+        title: "Name required",
+        description: "Please enter your name to continue",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Generate a random meeting ID for quick start
+    const newMeetingId = Math.random().toString(36).substring(2, 12);
+    navigate(`/meet/${newMeetingId}?name=${encodeURIComponent(quickStartName)}`);
   };
 
   return (
@@ -231,14 +257,36 @@ const Index = () => {
             <p className="text-xl max-w-2xl mx-auto mb-10">
               Join thousands of teams using TalkConnect for seamless collaboration
             </p>
-            <Button 
-              size="lg" 
-              variant="secondary" 
-              className="text-primary"
-              onClick={handleCreateMeeting}
-            >
-              Start a Meeting Now
-            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button 
+                  size="lg" 
+                  variant="secondary" 
+                  className="text-primary"
+                >
+                  Start a Meeting Now
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Enter your name to start a meeting</DialogTitle>
+                  <DialogDescription>
+                    You'll be able to share the meeting link with others after joining.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <Input
+                    placeholder="Your name"
+                    value={quickStartName}
+                    onChange={(e) => setQuickStartName(e.target.value)}
+                    className="mb-2"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button onClick={handleQuickStart}>Start Meeting</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </section>
       </main>

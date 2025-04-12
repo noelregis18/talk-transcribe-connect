@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { MeetingControls } from "@/components/meeting/MeetingControls";
 import { ChatSidebar } from "@/components/meeting/ChatSidebar";
 import { ParticipantsSidebar } from "@/components/meeting/ParticipantsSidebar";
@@ -41,7 +40,7 @@ const MeetingRoom = () => {
   const [translationLanguage, setTranslationLanguage] = useState("en");
   const [copied, setCopied] = useState(false);
 
-  // Mock participants for UI demo
+  // Only include the current user in participants
   const [participants, setParticipants] = useState<Participant[]>([
     {
       id: "current-user",
@@ -49,14 +48,7 @@ const MeetingRoom = () => {
       audioEnabled,
       videoEnabled,
       isCurrentUser: true,
-    },
-    {
-      id: "mock-user-1",
-      name: "Emma Davis",
-      audioEnabled: true,
-      videoEnabled: true,
-      isCurrentUser: false,
-    },
+    }
   ]);
 
   useEffect(() => {
@@ -157,6 +149,12 @@ const MeetingRoom = () => {
   const handleBackgroundChange = (type: string, value: string | null) => {
     setBackgroundType(type);
     setBackgroundValue(value);
+    
+    // Notify the user that the background has changed
+    toast({
+      title: "Background changed",
+      description: type === "none" ? "Background removed" : `Background set to ${type}`,
+    });
   };
 
   const handleTranslationChange = (enabled: boolean, language: string) => {
@@ -297,17 +295,6 @@ const MeetingRoom = () => {
                 />
               )}
             </div>
-            
-            {/* Other participant */}
-            {!isScreenSharing && (
-              <div className="aspect-video">
-                <VideoStream
-                  name="Emma Davis"
-                  audioEnabled={true}
-                  stream={null} // No stream for mock participant
-                />
-              </div>
-            )}
           </div>
           
           {/* Translation subtitles */}
@@ -322,7 +309,7 @@ const MeetingRoom = () => {
         {isChatOpen && (
           <ChatSidebar
             isOpen={isChatOpen}
-            onClose={handleToggleChat}
+            onClose={() => setIsChatOpen(false)}
             participantName={participantName}
           />
         )}
@@ -330,7 +317,7 @@ const MeetingRoom = () => {
         {isParticipantsOpen && (
           <ParticipantsSidebar
             isOpen={isParticipantsOpen}
-            onClose={handleToggleParticipants}
+            onClose={() => setIsParticipantsOpen(false)}
             participants={participants}
           />
         )}
@@ -338,7 +325,7 @@ const MeetingRoom = () => {
         {isBackgroundOptionsOpen && (
           <BackgroundOptions
             isOpen={isBackgroundOptionsOpen}
-            onClose={handleToggleBackgroundOptions}
+            onClose={() => setIsBackgroundOptionsOpen(false)}
             onSelectBackground={handleBackgroundChange}
           />
         )}
@@ -346,8 +333,18 @@ const MeetingRoom = () => {
         {isTranslationOptionsOpen && (
           <TranslationOptions
             isOpen={isTranslationOptionsOpen}
-            onClose={handleToggleTranslationOptions}
-            onTranslationChange={handleTranslationChange}
+            onClose={() => setIsTranslationOptionsOpen(false)}
+            onTranslationChange={(enabled, language) => {
+              setTranslationEnabled(enabled);
+              setTranslationLanguage(language);
+              
+              if (enabled) {
+                toast({
+                  title: "Translation enabled",
+                  description: `Subtitles will appear in ${getLanguageName(language)}`,
+                });
+              }
+            }}
           />
         )}
       </div>
@@ -358,15 +355,62 @@ const MeetingRoom = () => {
         videoEnabled={videoEnabled}
         onToggleAudio={handleToggleAudio}
         onToggleVideo={handleToggleVideo}
-        onToggleChat={handleToggleChat}
-        onToggleParticipants={handleToggleParticipants}
+        onToggleChat={() => {
+          setIsChatOpen(!isChatOpen);
+          if (!isChatOpen) {
+            setIsParticipantsOpen(false);
+            setIsBackgroundOptionsOpen(false);
+            setIsTranslationOptionsOpen(false);
+          }
+        }}
+        onToggleParticipants={() => {
+          setIsParticipantsOpen(!isParticipantsOpen);
+          if (!isParticipantsOpen) {
+            setIsChatOpen(false);
+            setIsBackgroundOptionsOpen(false);
+            setIsTranslationOptionsOpen(false);
+          }
+        }}
         onToggleScreenShare={handleToggleScreenShare}
-        onToggleBackgroundOptions={handleToggleBackgroundOptions}
-        onToggleTranslation={handleToggleTranslationOptions}
+        onToggleBackgroundOptions={() => {
+          setIsBackgroundOptionsOpen(!isBackgroundOptionsOpen);
+          if (!isBackgroundOptionsOpen) {
+            setIsChatOpen(false);
+            setIsParticipantsOpen(false);
+            setIsTranslationOptionsOpen(false);
+          }
+        }}
+        onToggleTranslation={() => {
+          setIsTranslationOptionsOpen(!isTranslationOptionsOpen);
+          if (!isTranslationOptionsOpen) {
+            setIsChatOpen(false);
+            setIsParticipantsOpen(false);
+            setIsBackgroundOptionsOpen(false);
+          }
+        }}
         onEndCall={handleEndCall}
       />
     </div>
   );
+};
+
+// Helper function for translation language names
+const getLanguageName = (code: string) => {
+  const languages: Record<string, string> = {
+    en: "English",
+    es: "Spanish",
+    fr: "French",
+    de: "German",
+    it: "Italian",
+    pt: "Portuguese",
+    ru: "Russian",
+    ja: "Japanese",
+    ko: "Korean",
+    zh: "Chinese",
+    hi: "Hindi",
+    ar: "Arabic",
+  };
+  return languages[code] || code;
 };
 
 export default MeetingRoom;

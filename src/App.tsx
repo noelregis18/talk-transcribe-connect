@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import Index from "./pages/Index";
 import MeetingRoom from "./pages/MeetingRoom";
 import NotFound from "./pages/NotFound";
+import CreateMeeting from "./pages/CreateMeeting";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +21,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/meet" element={<CreateMeeting />} />
             <Route path="/meet/:id" element={<MeetingRoom />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

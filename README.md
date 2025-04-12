@@ -1,73 +1,111 @@
-# Welcome to your Lovable project
 
-## Project info
+# TalkConnect Video Conferencing App
 
-**URL**: https://lovable.dev/projects/9ad91f65-2fd9-4133-9496-183dd54dfbe7
+TalkConnect is a modern video conferencing application built with React, offering high-quality video and audio communication with advanced features like real-time translation, screen sharing, background effects, and integrated chat.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **HD Video & Audio**: Crystal clear video and audio quality
+- **Real-time Translation**: Subtitle translations for breaking language barriers
+- **Integrated Chat**: In-meeting text communication
+- **Screen Sharing**: Present your screen with others in the meeting
+- **Background Effects**: Change or blur your background during calls
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **Meeting Links**: Generate and share meeting links with others
+- **Dark/Light Mode**: Toggle between dark and light themes
 
-**Use Lovable**
+## Getting Started
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/9ad91f65-2fd9-4133-9496-183dd54dfbe7) and start prompting.
+### Prerequisites
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js (version 14 or later)
+- npm or yarn
 
-**Use your preferred IDE**
+### Installation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+1. Clone the repository:
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+git clone <repository-url>
+cd talkconnect
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Install dependencies:
+```sh
+npm install
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+3. Start the development server:
+```sh
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+4. Open your browser and navigate to:
+```
+http://localhost:5173
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Usage
 
-**Use GitHub Codespaces**
+### Creating a Meeting
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. Navigate to the home page
+2. Enter your name in the "Create Meeting" tab
+3. Click "Create Meeting"
+4. Share the generated meeting link with others
 
-## What technologies are used for this project?
+### Joining a Meeting
 
-This project is built with:
+1. Get a meeting link or ID from someone
+2. Navigate to the home page
+3. Enter the meeting ID and your name in the "Join Meeting" tab
+4. Click "Join Now"
 
-- Vite
+### In-Meeting Controls
+
+- Toggle microphone on/off
+- Toggle camera on/off
+- Share your screen
+- Open the chat sidebar
+- View participants
+- Change background
+- Enable real-time translation
+- End call
+
+## Technologies Used
+
+- React.js
 - TypeScript
-- React
-- shadcn-ui
 - Tailwind CSS
+- shadcn/ui
+- React Router
+- WebRTC (for video/audio streaming)
+- Vite (for fast development)
 
-## How can I deploy this project?
+## Project Structure
 
-Simply open [Lovable](https://lovable.dev/projects/9ad91f65-2fd9-4133-9496-183dd54dfbe7) and click on Share -> Publish.
+```
+src/
+├── components/         # Reusable UI components
+│   ├── meeting/        # Meeting-specific components
+│   └── ui/             # General UI components
+├── hooks/              # Custom React hooks
+├── pages/              # Application pages
+└── ...
+```
 
-## Can I connect a custom domain to my Lovable project?
+## Contact
 
-Yes it is!
+- **LinkedIn**: [Noel Regis](https://www.linkedin.com/in/noel-regis-aa07081b1/)
+- **GitHub**: [noelregis18](https://github.com/noelregis18)
+- **Twitter**: [@NoelRegis8](https://x.com/NoelRegis8)
+- **Email**: noel.regis04@gmail.com
+- **Phone**: +91 7319546900
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## License
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- Icons provided by [Lucide Icons](https://lucide.dev/)
+- UI components by [shadcn/ui](https://ui.shadcn.com/)
