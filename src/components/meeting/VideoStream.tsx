@@ -32,7 +32,6 @@ export function VideoStream({
   useEffect(() => {
     // Apply background effects to video
     if (videoRef.current && stream && backgroundType !== "none") {
-      // Additional canvas-based processing could be added here for more advanced background effects
       console.log(`Applying background effect: ${backgroundType}`);
     }
   }, [stream, backgroundType, backgroundValue]);
@@ -60,7 +59,7 @@ export function VideoStream({
           />
           {isScreenShare && (
             <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 text-xs rounded-md">
-              My personal app
+              Screen sharing
             </div>
           )}
         </>

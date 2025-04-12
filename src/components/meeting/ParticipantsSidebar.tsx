@@ -34,38 +34,44 @@ export function ParticipantsSidebar({
       </div>
       
       <ScrollArea className="flex-1 p-4">
-        <div className="space-y-3">
-          {participants.map((participant) => (
-            <div
-              key={participant.id}
-              className="flex items-center justify-between p-3 rounded-lg hover:bg-accent"
-            >
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                  <span className="font-medium text-sm">
-                    {participant.name.charAt(0).toUpperCase()}
+        {participants.length === 0 ? (
+          <div className="p-4 text-center text-muted-foreground">
+            No other participants have joined yet
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {participants.map((participant) => (
+              <div
+                key={participant.id}
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-accent"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                    <span className="font-medium text-sm">
+                      {participant.name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <span>
+                    {participant.name}{" "}
+                    {participant.isCurrentUser && <span className="text-xs">(You)</span>}
                   </span>
                 </div>
-                <span>
-                  {participant.name}{" "}
-                  {participant.isCurrentUser && <span className="text-xs">(You)</span>}
-                </span>
+                <div className="flex gap-2">
+                  {participant.audioEnabled ? (
+                    <Mic className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <MicOff className="h-4 w-4 text-red-500" />
+                  )}
+                  {participant.videoEnabled ? (
+                    <Video className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <VideoOff className="h-4 w-4 text-red-500" />
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2">
-                {participant.audioEnabled ? (
-                  <Mic className="h-4 w-4 text-green-500" />
-                ) : (
-                  <MicOff className="h-4 w-4 text-red-500" />
-                )}
-                {participant.videoEnabled ? (
-                  <Video className="h-4 w-4 text-green-500" />
-                ) : (
-                  <VideoOff className="h-4 w-4 text-red-500" />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </ScrollArea>
     </div>
   );

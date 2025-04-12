@@ -19,6 +19,9 @@ const configuration = {
   ] 
 };
 
+// Socket.io server URL (would connect to your real WebRTC signaling server)
+const SIGNALING_SERVER_URL = "https://your-signaling-server.com";
+
 type Participant = {
   id: string;
   name: string;
@@ -59,59 +62,103 @@ const MeetingRoom = () => {
 
   const [participants, setParticipants] = useState<Participant[]>([]);
   
-  // Function to create a simple signaling server connection
-  // In a production environment, you would use a proper signaling server
+  // Function to initialize WebSocket connection to the signaling server
   useEffect(() => {
     if (!id) return;
     
     // Create WebSocket connection for signaling
-    // Using a mock local WebSocket for demo - in production use a real signaling server
-    const wsUrl = `wss://mock-signaling-server.com/meeting/${id}`;
-    const mockSocket = {
-      onopen: null as any,
-      onmessage: null as any,
-      onclose: null as any,
-      onerror: null as any,
-      send: (data: string) => {
-        // Mock sending data - simulate broadcast to all participants
-        // In a real implementation, this would go to a server
-        console.log("Sending signal:", JSON.parse(data));
+    // In a real app, replace with actual WebSocket or Socket.IO connection
+    const webSocketUrl = `${SIGNALING_SERVER_URL}/${id}`;
+    console.log(`Attempting to connect to signaling server: ${webSocketUrl}`);
+    
+    try {
+      // Create a dummy WebSocket implementation for local development
+      // In production, this would be a real WebSocket connection to your signaling server
+      const mockSocket = {
+        send: (data: string) => {
+          console.log("Mock WebSocket - Sending data:", JSON.parse(data));
+        },
+        close: () => {
+          console.log("Mock WebSocket - Connection closed");
+        },
+        onopen: null as any,
+        onmessage: null as any,
+        onclose: null as any,
+        onerror: null as any
+      };
+
+      // In a real implementation, uncomment this:
+      // const realSocket = new WebSocket(webSocketUrl);
+      // socketRef.current = realSocket;
+      
+      // For now, use the mock socket
+      socketRef.current = mockSocket as unknown as WebSocket;
+      
+      // Setup event handlers
+      if (socketRef.current) {
+        // Handle connection open
+        socketRef.current.onopen = () => {
+          console.log("WebSocket connection established");
+          // Announce yourself to the room
+          sendSignal({
+            type: "join",
+            roomId: id,
+            senderId: participantId,
+            senderName: participantName,
+            audioEnabled,
+            videoEnabled
+          });
+        };
         
-        // Simulate receiving data from other peers with a delay
-        setTimeout(() => {
-          const parsedData = JSON.parse(data);
-          if (parsedData.type === "join" && parsedData.senderId === participantId) {
-            simulateNewParticipantJoining();
+        // Handle incoming messages
+        socketRef.current.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            handleSignalingData(message);
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
           }
-        }, 2000);
-      },
-      close: () => console.log("WebSocket closed")
-    };
-    
-    socketRef.current = mockSocket as unknown as WebSocket;
-    
-    // Send join message to notify others
-    if (socketRef.current) {
-      socketRef.current.onopen = () => {
-        sendSignal({ 
-          type: "join", 
-          senderId: participantId, 
-          senderName: participantName 
-        });
-      };
+        };
+        
+        // Handle connection close
+        socketRef.current.onclose = () => {
+          console.log("WebSocket connection closed");
+          toast({
+            title: "Connection lost",
+            description: "You've been disconnected from the meeting",
+            variant: "destructive"
+          });
+        };
+        
+        // Handle connection error
+        socketRef.current.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          toast({
+            title: "Connection error",
+            description: "Failed to connect to the meeting",
+            variant: "destructive"
+          });
+        };
+      }
       
-      // Simulate connection open immediately for mock
-      mockSocket.onopen && mockSocket.onopen();
-      
-      // Handle incoming messages
-      socketRef.current.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        handleSignalingData(message);
-      };
+      // Simulate connection open for development
+      if (mockSocket && mockSocket.onopen) {
+        setTimeout(() => {
+          mockSocket.onopen();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error("Error setting up WebSocket:", error);
+      toast({
+        title: "Connection error",
+        description: "Failed to connect to the meeting server",
+        variant: "destructive"
+      });
     }
     
     return () => {
       // Clean up WebSocket connection
+      console.log("Cleaning up WebSocket connection");
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;
@@ -123,128 +170,234 @@ const MeetingRoom = () => {
       });
       peerConnections.current = {};
     };
-  }, [id, participantId, participantName]);
+  }, [id, participantId, participantName, audioEnabled, videoEnabled, toast]);
   
   // Helper function to send signals via the WebSocket
   const sendSignal = (message: any) => {
     if (socketRef.current) {
-      socketRef.current.send(JSON.stringify(message));
+      try {
+        const messageString = JSON.stringify(message);
+        socketRef.current.send(messageString);
+        console.log("Signal sent:", message);
+      } catch (error) {
+        console.error("Error sending signal:", error);
+      }
+    } else {
+      console.warn("Cannot send signal: WebSocket not connected");
     }
   };
   
   // Handle incoming WebRTC signaling data
   const handleSignalingData = async (message: any) => {
-    // Handle different message types (offer, answer, ice candidate)
-    if (message.senderId === participantId) return; // Skip messages from self
+    console.log("Received signal:", message);
+    
+    // Skip messages from self
+    if (message.senderId === participantId) {
+      console.log("Skipping message from self");
+      return;
+    }
     
     const { senderId, senderName, type } = message;
     
-    // If this is a new user, create a peer connection for them
-    if (!peerConnections.current[senderId]) {
-      createPeerConnection(senderId, senderName);
-    }
-    
-    switch (type) {
-      case "join":
-        // New participant joined, send them an offer
-        if (localStreamRef.current) {
-          const offer = await peerConnections.current[senderId].createOffer();
-          await peerConnections.current[senderId].setLocalDescription(offer);
-          sendSignal({
-            type: "offer",
-            senderId: participantId,
-            receiverId: senderId,
-            sdp: peerConnections.current[senderId].localDescription
-          });
-        }
-        break;
-        
-      case "offer":
-        // Received an offer, create an answer
-        if (message.receiverId === participantId) {
-          await peerConnections.current[senderId].setRemoteDescription(new RTCSessionDescription(message.sdp));
-          const answer = await peerConnections.current[senderId].createAnswer();
-          await peerConnections.current[senderId].setLocalDescription(answer);
-          sendSignal({
-            type: "answer",
-            senderId: participantId,
-            receiverId: senderId,
-            sdp: peerConnections.current[senderId].localDescription
-          });
-        }
-        break;
-        
-      case "answer":
-        // Received an answer to our offer
-        if (message.receiverId === participantId) {
-          await peerConnections.current[senderId].setRemoteDescription(new RTCSessionDescription(message.sdp));
-        }
-        break;
-        
-      case "ice-candidate":
-        // Add ICE candidate received from peer
-        if (message.receiverId === participantId) {
-          await peerConnections.current[senderId].addIceCandidate(
-            new RTCIceCandidate(message.candidate)
-          );
-        }
-        break;
-        
-      case "leave":
-        // Participant left, clean up their connection
-        if (peerConnections.current[senderId]) {
-          peerConnections.current[senderId].close();
-          delete peerConnections.current[senderId];
+    try {
+      switch (type) {
+        case "join":
+          console.log(`${senderName} has joined the meeting`);
           
-          // Remove participant from list
-          setParticipants(prev => prev.filter(p => p.id !== senderId));
+          // If new user, create peer connection and send an offer
+          if (!peerConnections.current[senderId]) {
+            console.log("Creating new peer connection for", senderName);
+            const peerConnection = createPeerConnection(senderId, senderName);
+            
+            if (peerConnection && localStreamRef.current) {
+              // Create and send an offer
+              const offer = await peerConnection.createOffer();
+              await peerConnection.setLocalDescription(offer);
+              
+              sendSignal({
+                type: "offer",
+                roomId: id,
+                senderId: participantId,
+                receiverId: senderId,
+                senderName: participantName,
+                sdp: peerConnection.localDescription
+              });
+            }
+          }
           
+          // Show a toast notification
           toast({
-            title: "Participant left",
-            description: `${senderName} has left the meeting`
+            title: "New participant",
+            description: `${senderName} joined the meeting`
           });
-        }
-        break;
+          break;
+          
+        case "offer":
+          // Only process if this offer is for us
+          if (message.receiverId === participantId) {
+            console.log("Received offer from", senderName);
+            
+            // Create a peer connection if one doesn't exist
+            if (!peerConnections.current[senderId]) {
+              createPeerConnection(senderId, senderName);
+            }
+            
+            const peerConnection = peerConnections.current[senderId];
+            if (peerConnection) {
+              // Set the remote description from the offer
+              await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+              
+              // Create and send an answer
+              const answer = await peerConnection.createAnswer();
+              await peerConnection.setLocalDescription(answer);
+              
+              sendSignal({
+                type: "answer",
+                roomId: id,
+                senderId: participantId,
+                receiverId: senderId,
+                senderName: participantName,
+                sdp: peerConnection.localDescription
+              });
+            }
+          }
+          break;
+          
+        case "answer":
+          // Only process if this answer is for us
+          if (message.receiverId === participantId) {
+            console.log("Received answer from", senderName);
+            
+            const peerConnection = peerConnections.current[senderId];
+            if (peerConnection) {
+              // Set the remote description from the answer
+              await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+            }
+          }
+          break;
+          
+        case "ice-candidate":
+          // Only process if this ICE candidate is for us
+          if (message.receiverId === participantId) {
+            console.log("Received ICE candidate from", senderName);
+            
+            const peerConnection = peerConnections.current[senderId];
+            if (peerConnection) {
+              // Add the ICE candidate
+              await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+            }
+          }
+          break;
+          
+        case "leave":
+          console.log(`${senderName} has left the meeting`);
+          
+          // Clean up the peer connection
+          if (peerConnections.current[senderId]) {
+            peerConnections.current[senderId].close();
+            delete peerConnections.current[senderId];
+            
+            // Remove the participant from our list
+            setParticipants(prev => prev.filter(p => p.id !== senderId));
+            
+            // Show a toast notification
+            toast({
+              title: "Participant left",
+              description: `${senderName} has left the meeting`
+            });
+          }
+          break;
+          
+        case "media-state-change":
+          console.log(`${senderName} changed media state:`, message);
+          
+          // Update the participant's media state in our list
+          setParticipants(prev => prev.map(p => {
+            if (p.id === senderId) {
+              return {
+                ...p,
+                audioEnabled: message.audioEnabled,
+                videoEnabled: message.videoEnabled
+              };
+            }
+            return p;
+          }));
+          break;
+      }
+    } catch (error) {
+      console.error("Error handling signaling data:", error);
     }
   };
   
   // Create a new WebRTC peer connection
   const createPeerConnection = (peerId: string, peerName: string) => {
     try {
+      console.log("Creating new peer connection for", peerName, peerId);
+      
+      // Create the connection with the ICE servers
       const peerConnection = new RTCPeerConnection(configuration);
       
       // Add all local tracks to the peer connection
       if (localStreamRef.current) {
+        console.log("Adding local tracks to peer connection");
         localStreamRef.current.getTracks().forEach(track => {
           peerConnection.addTrack(track, localStreamRef.current!);
         });
+      } else {
+        console.warn("No local stream available to add tracks");
       }
       
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log("Generated ICE candidate for", peerName);
+          
+          // Send the ICE candidate to the peer
           sendSignal({
             type: "ice-candidate",
+            roomId: id,
             senderId: participantId,
             receiverId: peerId,
+            senderName: participantName,
             candidate: event.candidate
           });
         }
       };
       
+      // Log ICE connection state changes
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log("ICE connection state changed to:", peerConnection.iceConnectionState);
+      };
+      
       // Handle incoming tracks
       peerConnection.ontrack = (event) => {
+        console.log("Received remote track from", peerName);
+        
+        // Create a new MediaStream to add the tracks to
         const remoteStream = new MediaStream();
+        
+        // Add each track to the stream
         event.streams[0].getTracks().forEach(track => {
+          console.log("Adding remote track to stream:", track.kind);
           remoteStream.addTrack(track);
         });
         
-        // Add or update participant in the participants list
+        // Add or update the participant in our list
         setParticipants(prev => {
+          // Check if we already have this participant
           const existingParticipant = prev.find(p => p.id === peerId);
+          
           if (existingParticipant) {
-            return prev.map(p => p.id === peerId ? {...p, stream: remoteStream} : p);
+            // Update existing participant
+            return prev.map(p => {
+              if (p.id === peerId) {
+                return { ...p, stream: remoteStream };
+              }
+              return p;
+            });
           } else {
+            // Add new participant
+            console.log("Adding new participant:", peerName);
             return [...prev, {
               id: peerId,
               name: peerName,
@@ -257,10 +410,12 @@ const MeetingRoom = () => {
         });
       };
       
+      // Store the connection in our map
       peerConnections.current[peerId] = peerConnection;
+      
       return peerConnection;
-    } catch (err) {
-      console.error("Error creating peer connection:", err);
+    } catch (error) {
+      console.error("Error creating peer connection:", error);
       toast({
         title: "Connection error",
         description: "Could not connect to other participants",
@@ -270,45 +425,23 @@ const MeetingRoom = () => {
     }
   };
 
-  // Mock function to simulate new participants joining (for demo purposes)
-  // In a real app, this would happen through the signaling server
-  const simulateNewParticipantJoining = () => {
-    // Create a mock participant with a mock stream
-    const mockRemoteStream = new MediaStream();
-    const mockId = uuidv4();
-    const mockName = "Guest User"; 
-    
-    // Add participant to the list
-    setParticipants(prev => [
-      ...prev,
-      {
-        id: mockId,
-        name: mockName,
-        audioEnabled: true,
-        videoEnabled: true,
-        isCurrentUser: false,
-        stream: mockRemoteStream
-      }
-    ]);
-    
-    toast({
-      title: "New participant",
-      description: `${mockName} joined the meeting`
-    });
-  };
-
   // Set up camera when component mounts
   useEffect(() => {
+    console.log("Setting up camera");
+    
     const setupCamera = async () => {
       try {
+        // Request access to media devices
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
+        
+        console.log("Camera access granted", mediaStream);
         setStream(mediaStream);
         localStreamRef.current = mediaStream;
         
-        // Update current user in participants list
+        // Add ourselves to the participants list
         setParticipants([{
           id: participantId,
           name: participantName,
@@ -318,12 +451,18 @@ const MeetingRoom = () => {
           stream: mediaStream
         }]);
         
-        // Send join signal to notify others
-        sendSignal({ 
-          type: "join", 
-          senderId: participantId, 
-          senderName: participantName 
-        });
+        // If WebSocket is already connected, announce join
+        // Otherwise the open handler will do it
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          sendSignal({ 
+            type: "join", 
+            roomId: id,
+            senderId: participantId, 
+            senderName: participantName,
+            audioEnabled,
+            videoEnabled
+          });
+        }
       } catch (error) {
         console.error("Error accessing media devices:", error);
         toast({
@@ -332,7 +471,7 @@ const MeetingRoom = () => {
           variant: "destructive",
         });
         
-        // Still add the participant, but without a stream
+        // Still add ourselves to the participants list, just without a stream
         setParticipants([{
           id: participantId,
           name: participantName,
@@ -348,6 +487,8 @@ const MeetingRoom = () => {
 
     // Clean up when component unmounts
     return () => {
+      console.log("Cleaning up camera and streams");
+      
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -358,7 +499,7 @@ const MeetingRoom = () => {
         screenShareStream.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [participantId, participantName, toast]);
+  }, [participantId, participantName, audioEnabled, videoEnabled, id, toast]);
 
   // Update the current user's audio/video state in participants list
   useEffect(() => {
@@ -380,7 +521,9 @@ const MeetingRoom = () => {
       // Broadcast audio state change to peers
       sendSignal({
         type: "media-state-change",
+        roomId: id,
         senderId: participantId,
+        senderName: participantName,
         audioEnabled: !audioEnabled,
         videoEnabled
       });
@@ -398,7 +541,9 @@ const MeetingRoom = () => {
       // Broadcast video state change to peers
       sendSignal({
         type: "media-state-change",
+        roomId: id,
         senderId: participantId,
+        senderName: participantName,
         audioEnabled,
         videoEnabled: !videoEnabled
       });
@@ -484,6 +629,7 @@ const MeetingRoom = () => {
     // Notify other participants that we're leaving
     sendSignal({
       type: "leave",
+      roomId: id,
       senderId: participantId,
       senderName: participantName
     });
@@ -547,6 +693,11 @@ const MeetingRoom = () => {
     }
   };
 
+  // Filter out participants who are not current user and have no stream
+  const activeParticipants = participants.filter(p => 
+    p.isCurrentUser || (p.stream && p.stream.getTracks().length > 0)
+  );
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Meeting header */}
@@ -568,7 +719,7 @@ const MeetingRoom = () => {
           </Button>
         </div>
         <div className="text-sm text-muted-foreground">
-          {participants.length} participant{participants.length !== 1 ? 's' : ''}
+          {activeParticipants.length} participant{activeParticipants.length !== 1 ? 's' : ''}
         </div>
       </div>
 
@@ -576,9 +727,9 @@ const MeetingRoom = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Video grid */}
         <div className="flex-1 p-4 overflow-y-auto">
-          <div className={`grid gap-4 ${participants.length > 1 ? 'grid-cols-1 md:grid-cols-2' : ''}`}>
+          <div className={`grid gap-4 ${activeParticipants.length > 1 ? 'grid-cols-1 md:grid-cols-2' : ''}`}>
             {/* Current user's video (or screen share) */}
-            <div className={`${participants.length > 1 ? 'aspect-video' : 'aspect-video w-full h-full max-h-[500px]'}`}>
+            <div className={`${activeParticipants.length > 1 ? 'aspect-video' : 'aspect-video w-full h-full max-h-[500px]'}`}>
               {isScreenSharing ? (
                 <VideoStream
                   stream={screenShareStream}
@@ -600,7 +751,7 @@ const MeetingRoom = () => {
             </div>
 
             {/* Other participants' videos */}
-            {participants.filter(p => !p.isCurrentUser).map(participant => (
+            {activeParticipants.filter(p => !p.isCurrentUser).map(participant => (
               <div key={participant.id} className="aspect-video">
                 <VideoStream
                   stream={participant.stream}
@@ -633,7 +784,7 @@ const MeetingRoom = () => {
           <ParticipantsSidebar
             isOpen={isParticipantsOpen}
             onClose={() => setIsParticipantsOpen(false)}
-            participants={participants}
+            participants={activeParticipants}
           />
         )}
         
