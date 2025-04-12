@@ -9,6 +9,7 @@ import { VideoStream } from "@/components/meeting/VideoStream";
 import BackgroundOptions from "@/components/meeting/BackgroundOptions";
 import { TranslationOptions } from "@/components/meeting/TranslationOptions";
 import { Copy, Check } from "lucide-react";
+import { v4 as uuidv4 } from "uuid";
 
 type Participant = {
   id: string;
@@ -16,7 +17,19 @@ type Participant = {
   audioEnabled: boolean;
   videoEnabled: boolean;
   isCurrentUser: boolean;
+  stream?: MediaStream | null;
 };
+
+const MOCK_PARTICIPANTS: Record<string, string[]> = {};
+
+// Mock participant names for demo purposes
+const mockNames = [
+  "Alex Johnson", 
+  "Jamie Smith", 
+  "Taylor Rodriguez", 
+  "Casey Williams", 
+  "Jordan Brown"
+];
 
 const MeetingRoom = () => {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +37,8 @@ const MeetingRoom = () => {
   const participantName = searchParams.get("name") || "Anonymous";
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  const participantId = useRef(uuidv4()).current;
 
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -40,26 +55,42 @@ const MeetingRoom = () => {
   const [translationLanguage, setTranslationLanguage] = useState("en");
   const [copied, setCopied] = useState(false);
 
-  // Only include the current user in participants
-  const [participants, setParticipants] = useState<Participant[]>([
-    {
-      id: "current-user",
-      name: participantName,
-      audioEnabled,
-      videoEnabled,
-      isCurrentUser: true,
-    }
-  ]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
 
+  // Initialize MOCK_PARTICIPANTS for this meeting if it doesn't exist
   useEffect(() => {
-    // Update the current user's audio/video state in participants list
-    setParticipants((prev) =>
-      prev.map((p) =>
-        p.isCurrentUser ? { ...p, audioEnabled, videoEnabled } : p
-      )
-    );
-  }, [audioEnabled, videoEnabled]);
+    if (!MOCK_PARTICIPANTS[id || ""]) {
+      MOCK_PARTICIPANTS[id || ""] = [];
+    }
+  }, [id]);
 
+  // Register current user in the meeting
+  useEffect(() => {
+    if (id) {
+      // Add participant to meeting if they're not already in
+      if (!MOCK_PARTICIPANTS[id].includes(participantId)) {
+        MOCK_PARTICIPANTS[id].push(participantId);
+        
+        // Simulate a join notification
+        toast({
+          title: "You joined the meeting",
+          description: `Welcome to meeting room: ${id}`,
+        });
+      }
+
+      return () => {
+        // Remove participant when they leave
+        if (id && MOCK_PARTICIPANTS[id]) {
+          const index = MOCK_PARTICIPANTS[id].indexOf(participantId);
+          if (index > -1) {
+            MOCK_PARTICIPANTS[id].splice(index, 1);
+          }
+        }
+      };
+    }
+  }, [id, participantId, toast]);
+
+  // Set up camera and update participants list
   useEffect(() => {
     // Set up camera when component mounts
     const setupCamera = async () => {
@@ -69,6 +100,9 @@ const MeetingRoom = () => {
           audio: true,
         });
         setStream(mediaStream);
+        
+        // Update current user in participants list with stream
+        updateCurrentUserInParticipants(mediaStream);
       } catch (error) {
         console.error("Error accessing media devices:", error);
         toast({
@@ -76,10 +110,37 @@ const MeetingRoom = () => {
           description: "Please check your camera and microphone permissions.",
           variant: "destructive",
         });
+        // Still add the participant, but without a stream
+        updateCurrentUserInParticipants(null);
       }
     };
 
     setupCamera();
+
+    // Simulate other participants joining with a delay
+    const simulateOtherParticipants = setTimeout(() => {
+      if (id) {
+        const totalParticipants = Math.floor(Math.random() * 3) + 1; // 1 to 3 other participants
+        const otherParticipants = Array.from({ length: totalParticipants }).map((_, index) => ({
+          id: uuidv4(),
+          name: mockNames[index % mockNames.length],
+          audioEnabled: Math.random() > 0.2, // 80% chance audio is enabled
+          videoEnabled: Math.random() > 0.3, // 70% chance video is enabled
+          isCurrentUser: false,
+          stream: null // In a real app, this would be their actual stream
+        }));
+        
+        setParticipants(current => {
+          const currentUser = current.find(p => p.isCurrentUser);
+          return currentUser ? [...otherParticipants, currentUser] : [...otherParticipants];
+        });
+        
+        toast({
+          title: "New participants joined",
+          description: `${totalParticipants} participant${totalParticipants > 1 ? 's' : ''} joined the meeting`,
+        });
+      }
+    }, 3000);
 
     // Clean up when component unmounts
     return () => {
@@ -89,8 +150,44 @@ const MeetingRoom = () => {
       if (screenShareStream) {
         screenShareStream.getTracks().forEach((track) => track.stop());
       }
+      clearTimeout(simulateOtherParticipants);
     };
-  }, []);
+  }, [id, toast]);
+
+  const updateCurrentUserInParticipants = (userStream: MediaStream | null) => {
+    setParticipants(current => {
+      // Check if the current user is already in the list
+      const currentUserIndex = current.findIndex(p => p.isCurrentUser);
+      
+      const updatedCurrentUser = {
+        id: participantId,
+        name: participantName,
+        audioEnabled,
+        videoEnabled,
+        isCurrentUser: true,
+        stream: userStream
+      };
+      
+      if (currentUserIndex >= 0) {
+        // Update the existing current user
+        const updatedParticipants = [...current];
+        updatedParticipants[currentUserIndex] = updatedCurrentUser;
+        return updatedParticipants;
+      } else {
+        // Add the current user to the list
+        return [...current, updatedCurrentUser];
+      }
+    });
+  };
+
+  // Update the current user's audio/video state in participants list
+  useEffect(() => {
+    setParticipants((prev) =>
+      prev.map((p) =>
+        p.isCurrentUser ? { ...p, audioEnabled, videoEnabled } : p
+      )
+    );
+  }, [audioEnabled, videoEnabled]);
 
   const handleToggleAudio = () => {
     if (stream) {
@@ -267,15 +364,18 @@ const MeetingRoom = () => {
             )}
           </Button>
         </div>
+        <div className="text-sm text-muted-foreground">
+          {participants.length} participant{participants.length !== 1 ? 's' : ''}
+        </div>
       </div>
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Video grid */}
         <div className="flex-1 p-4 overflow-y-auto">
-          <div className="video-grid h-full">
-            {/* Main video */}
-            <div className="aspect-video w-full h-full max-h-[500px]">
+          <div className={`grid gap-4 ${participants.length > 1 ? 'grid-cols-1 md:grid-cols-2' : ''}`}>
+            {/* Current user's video (or screen share) */}
+            <div className={`${participants.length > 1 ? 'aspect-video' : 'aspect-video w-full h-full max-h-[500px]'}`}>
               {isScreenSharing ? (
                 <VideoStream
                   stream={screenShareStream}
@@ -295,6 +395,18 @@ const MeetingRoom = () => {
                 />
               )}
             </div>
+
+            {/* Other participants' videos */}
+            {participants.filter(p => !p.isCurrentUser).map(participant => (
+              <div key={participant.id} className="aspect-video">
+                <VideoStream
+                  stream={participant.stream}
+                  name={participant.name}
+                  audioEnabled={participant.audioEnabled}
+                  backgroundType="none"
+                />
+              </div>
+            ))}
           </div>
           
           {/* Translation subtitles */}
@@ -334,17 +446,7 @@ const MeetingRoom = () => {
           <TranslationOptions
             isOpen={isTranslationOptionsOpen}
             onClose={() => setIsTranslationOptionsOpen(false)}
-            onTranslationChange={(enabled, language) => {
-              setTranslationEnabled(enabled);
-              setTranslationLanguage(language);
-              
-              if (enabled) {
-                toast({
-                  title: "Translation enabled",
-                  description: `Subtitles will appear in ${getLanguageName(language)}`,
-                });
-              }
-            }}
+            onTranslationChange={handleTranslationChange}
           />
         )}
       </div>
@@ -355,62 +457,15 @@ const MeetingRoom = () => {
         videoEnabled={videoEnabled}
         onToggleAudio={handleToggleAudio}
         onToggleVideo={handleToggleVideo}
-        onToggleChat={() => {
-          setIsChatOpen(!isChatOpen);
-          if (!isChatOpen) {
-            setIsParticipantsOpen(false);
-            setIsBackgroundOptionsOpen(false);
-            setIsTranslationOptionsOpen(false);
-          }
-        }}
-        onToggleParticipants={() => {
-          setIsParticipantsOpen(!isParticipantsOpen);
-          if (!isParticipantsOpen) {
-            setIsChatOpen(false);
-            setIsBackgroundOptionsOpen(false);
-            setIsTranslationOptionsOpen(false);
-          }
-        }}
+        onToggleChat={handleToggleChat}
+        onToggleParticipants={handleToggleParticipants}
         onToggleScreenShare={handleToggleScreenShare}
-        onToggleBackgroundOptions={() => {
-          setIsBackgroundOptionsOpen(!isBackgroundOptionsOpen);
-          if (!isBackgroundOptionsOpen) {
-            setIsChatOpen(false);
-            setIsParticipantsOpen(false);
-            setIsTranslationOptionsOpen(false);
-          }
-        }}
-        onToggleTranslation={() => {
-          setIsTranslationOptionsOpen(!isTranslationOptionsOpen);
-          if (!isTranslationOptionsOpen) {
-            setIsChatOpen(false);
-            setIsParticipantsOpen(false);
-            setIsBackgroundOptionsOpen(false);
-          }
-        }}
+        onToggleBackgroundOptions={handleToggleBackgroundOptions}
+        onToggleTranslation={handleToggleTranslationOptions}
         onEndCall={handleEndCall}
       />
     </div>
   );
-};
-
-// Helper function for translation language names
-const getLanguageName = (code: string) => {
-  const languages: Record<string, string> = {
-    en: "English",
-    es: "Spanish",
-    fr: "French",
-    de: "German",
-    it: "Italian",
-    pt: "Portuguese",
-    ru: "Russian",
-    ja: "Japanese",
-    ko: "Korean",
-    zh: "Chinese",
-    hi: "Hindi",
-    ar: "Arabic",
-  };
-  return languages[code] || code;
 };
 
 export default MeetingRoom;
